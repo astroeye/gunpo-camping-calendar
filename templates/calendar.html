@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>군포 캠핑장 예약 현황 달력</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1 id="calendar-title">군포 캠핑장 예약 현황 달력</h1>
+        
+        <div class="notice" id="status-notice">
+            Flask 서버를 통해 실제 데이터를 가져오고 있습니다.
+        </div>
+        
+        <div class="controls">
+            <div class="month-nav">
+                <button onclick="changeMonth(-1)">← 이전달</button>
+                <span id="current-month">2025년 10월</span>
+                <button onclick="changeMonth(1)">다음달 →</button>
+            </div>
+            <button class="refresh-btn" onclick="loadAllData()">예약 현황 새로고침</button>
+            <button class="range-btn" onclick="loadMonthData()">이번 달 전체 로드</button>
+        </div>
+        
+        <div class="progress-container" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-text" id="progress-text">로딩 중...</div>
+        </div>
+        
+        <table class="calendar-table">
+            <thead>
+                <tr>
+                    <th>일</th>
+                    <th>월</th>
+                    <th>화</th>
+                    <th>수</th>
+                    <th>목</th>
+                    <th>금</th>
+                    <th>토</th>
+                </tr>
+            </thead>
+            <tbody id="calendar-body">
+                <!-- 달력이 여기에 생성됩니다 -->
+            </tbody>
+        </table>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

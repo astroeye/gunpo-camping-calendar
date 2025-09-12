@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>군포 캠핑장 예약 현황 달력</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .calendar-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .calendar-table th {
+            background-color: #d4d4d4;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #999;
+        }
+        .calendar-table td {
+            border: 1px solid #999;
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+            height: 120px;
+            width: 14.28%;
+            position: relative;
+        }
+        .date-cell {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        .camp-info {
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .camp-info div {
+            margin: 2px 0;
+            padding: 1px;
+        }
+        .available {
+            color: #0066cc;
+            font-weight: bold;
+        }
+        .unavailable {
+            color: #cc0000;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .month-nav {
+            display: inline-block;
+            margin: 0 20px;
+        }
+        .month-nav button, .refresh-btn, .mode-btn {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 0 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .refresh-btn {
+            background-color: #4CAF50;
+        }
+        .mode-btn {
+            background-color: #FF9800;
+        }
+        .month-nav button:hover, .refresh-btn:hover, .mode-btn:hover {
+            opacity: 0.8;
+        }
+        .notice {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 20px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="calendar-title">군포 캠핑장 예약 현황 달력</h1>
+        
+        <div class="notice">
+            CORS 문제로 실제 데이터를 불러올 수 없습니다. 현재는 샘플 데이터를 표시하고 있습니다.
+        </div>
+        
+        <div class="controls">
+            <div class="month-nav">
+                <button onclick="changeMonth(-1)">← 이전달</button>
+                <span id="current-month">2025년 10월</span>
+                <button onclick="changeMonth(1)">다음달 →</button>
+            </div>
+            <button class="refresh-btn" onclick="loadAllData()">예약 현황 새로고침</button>
+            <button class="mode-btn" onclick="toggleMode()">실제 데이터 시도</button>
+        </div>
+        
+        <table class="calendar-table">
+            <thead>
+                <tr>
+                    <th>일</th>
+                    <th>월</th>
+                    <th>화</th>
+                    <th>수</th>
+                    <th>목</th>
+                    <th>금</th>
+                    <th>토</th>
+                </tr>
+            </thead>
+            <tbody id="calendar-body">
+                <!-- 달력이 여기에 생성됩니다 -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let currentYear = 2025;
+        let currentMonth = 10;
+        let useRealData = false;
+        
+        // 캠핑장 타입 매핑
+        const campTypes = {
+            1: '고급',
+            2: '일반', 
+            4: '자갈',
+            5: '데크'
+        };
+
+        // 샘플 데이터 생성 (랜덤하게 예약 현황 생성)
+        function generateSampleData() {
+            const sampleData = {};
+            const lastDate = new Date(currentYear, currentMonth, 0).getDate();
+            
+            for (let date = 1; date <= lastDate; date++) {
+                const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+                sampleData[dateStr] = {
+                    '고급': Math.floor(Math.random() * 4), // 0-3개
+                    '일반': Math.floor(Math.random() * 3), // 0-2개
+                    '자갈': Math.floor(Math.random() * 8), // 0-7개
+                    '데크': Math.floor(Math.random() * 6)  // 0-5개
+                };
+            }
+            
+            return sampleData;
+        }
+
+        // 모드 토글
+        function toggleMode() {
+            useRealData = !useRealData;
+            const modeBtn = document.querySelector('.mode-btn');
+            const notice = document.querySelector('.notice');
+            
+            if (useRealData) {
+                modeBtn.textContent = '샘플 데이터로 전환';
+                notice.innerHTML = '실제 데이터를 시도합니다. CORS 제한으로 인해 작동하지 않을 수 있습니다.';
+            } else {
+                modeBtn.textContent = '실제 데이터 시도';
+                notice.innerHTML = 'CORS 문제로 실제 데이터를 불러올 수 없습니다. 현재는 샘플 데이터를 표시하고 있습니다.';
+            }
+        }
+
+        // 월 변경
+        function changeMonth(delta) {
+            currentMonth += delta;
+            if (currentMonth > 12) {
+                currentMonth = 1;
+                currentYear++;
+            } else if (currentMonth < 1) {
+                currentMonth = 12;
+                currentYear--;
+            }
+            
+            updateTitle();
+            generateCalendar();
+        }
+
+        // 타이틀 업데이트
+        function updateTitle() {
+            document.getElementById('calendar-title').textContent = 
+                `군포 캠핑장 예약 현황 달력 (${currentYear}년 ${currentMonth}월)`;
+            document.getElementById('current-month').textContent = 
+                `${currentYear}년 ${currentMonth}월`;
+        }
+
+        // 달력 생성
+        function generateCalendar() {
+            const calendarBody = document.getElementById('calendar-body');
+            
+            // 해당 월의 첫 날과 마지막 날
+            const firstDay = new Date(currentYear, currentMonth - 1, 1).getDay();
+            const lastDate = new Date(currentYear, currentMonth, 0).getDate();
+            
+            let html = '';
+            let date = 1;
+            
+            // 달력 행 생성 (6주)
+            for (let week = 0; week < 6; week++) {
+                html += '<tr>';
+                
+                // 각 요일
+                for (let day = 0; day < 7; day++) {
+                    if (week === 0 && day < firstDay) {
+                        // 이전 달 날짜 (빈 셀)
+                        html += '<td></td>';
+                    } else if (date > lastDate) {
+                        // 다음 달 날짜 (빈 셀)
+                        html += '<td></td>';
+                    } else {
+                        // 현재 달 날짜
+                        const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+                        html += `
+                            <td>
+                                <div class="date-cell">${String(date).padStart(2, '0')}</div>
+                                <div class="camp-info" id="info-${dateStr}">
+                                    <div class="loading">대기중...</div>
+                                </div>
+                            </td>
+                        `;
+                        date++;
+                    }
+                }
+                html += '</tr>';
+                
+                // 모든 날짜를 표시했으면 종료
+                if (date > lastDate) break;
+            }
+            
+            calendarBody.innerHTML = html;
+        }
+
+        // 샘플 데이터로 표시
+        function loadSampleData() {
+            const sampleData = generateSampleData();
+            const lastDate = new Date(currentYear, currentMonth, 0).getDate();
+            
+            for (let date = 1; date <= lastDate; date++) {
+                const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+                const infoElement = document.getElementById(`info-${dateStr}`);
+                
+                if (infoElement && sampleData[dateStr]) {
+                    let html = '';
+                    Object.entries(sampleData[dateStr]).forEach(([typeName, count]) => {
+                        const className = count > 0 ? 'available' : 'unavailable';
+                        html += `<div class="${className}">${typeName}: ${count}</div>`;
+                    });
+                    infoElement.innerHTML = html;
+                }
+            }
+        }
+
+        // 프록시를 사용한 실제 데이터 로드 시도
+        async function loadRealData(date, partCd, typeName) {
+            try {
+                // CORS 프록시 서비스들을 시도해볼 수 있습니다
+                const proxyUrls = [
+                    `https://cors-anywhere.herokuapp.com/`,
+                    `https://api.allorigins.win/get?url=`,
+                    `https://cors-proxy.htmldriven.com/?url=`
+                ];
+                
+                const targetUrl = `https://www.gunpouc.or.kr/rest/camp/search?comcd=GUNPO04&part_cd=02&place_cd=${partCd}&sdate=${date}&edate=&edate_dsp=&day_cnt=1&appkind=1001`;
+                
+                // 첫 번째 프록시로 시도
+                const response = await fetch(proxyUrls[1] + encodeURIComponent(targetUrl));
+                const data = await response.json();
+                const html = data.contents;
+                
+                // HTML에서 예약가능한 항목 수 계산
+                const possibleMatches = html.match(/class="[^"]*li-possible[^"]*possible[^"]*"/g);
+                const count = possibleMatches ? possibleMatches.length : 0;
+                
+                return { typeName, count };
+            } catch (error) {
+                console.error(`Error loading real data for ${typeName}:`, error);
+                return { typeName, count: 'X' };
+            }
+        }
+
+        // 특정 날짜의 데이터 로드
+        async function loadDateData(date) {
+            const infoElement = document.getElementById(`info-${date}`);
+            if (!infoElement) return;
+            
+            infoElement.innerHTML = '<div class="loading">로딩중...</div>';
+            
+            if (useRealData) {
+                // 실제 데이터 로드 시도
+                const promises = Object.entries(campTypes).map(([partCd, typeName]) =>
+                    loadRealData(date, partCd, typeName)
+                );
+                
+                try {
+                    const results = await Promise.all(promises);
+                    let html = '';
+                    results.forEach(({ typeName, count }) => {
+                        const className = count === 'X' ? 'unavailable' : (count > 0 ? 'available' : 'unavailable');
+                        html += `<div class="${className}">${typeName}: ${count}</div>`;
+                    });
+                    infoElement.innerHTML = html;
+                } catch (error) {
+                    infoElement.innerHTML = '<div class="unavailable">로드 실패</div>';
+                }
+            } else {
+                // 샘플 데이터 사용
+                const sampleData = generateSampleData();
+                if (sampleData[date]) {
+                    let html = '';
+                    Object.entries(sampleData[date]).forEach(([typeName, count]) => {
+                        const className = count > 0 ? 'available' : 'unavailable';
+                        html += `<div class="${className}">${typeName}: ${count}</div>`;
+                    });
+                    infoElement.innerHTML = html;
+                }
+            }
+        }
+
+        // 모든 날짜의 데이터 로드
+        async function loadAllData() {
+            if (useRealData) {
+                const lastDate = new Date(currentYear, currentMonth, 0).getDate();
+                for (let date = 1; date <= lastDate; date++) {
+                    const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+                    await loadDateData(dateStr);
+                    // 서버 부담을 줄이기 위해 지연
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+            } else {
+                loadSampleData();
+            }
+        }
+
+        // 페이지 로드 시 달력 생성 및 샘플 데이터 로드
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTitle();
+            generateCalendar();
+            setTimeout(loadSampleData, 500); // 0.5초 후 샘플 데이터 로드
+        });
+    </script>
+</body>
+</html>

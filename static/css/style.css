@@ -1,0 +1,283 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 5px;
+    background-color: #f5f5f5;
+    font-size: 14px;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 5px;
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 22px;
+}
+
+.calendar-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+    table-layout: fixed;
+}
+
+.calendar-table th {
+    background-color: #d4d4d4;
+    padding: 8px 4px;
+    text-align: center;
+    font-weight: bold;
+    border: 1px solid #999;
+    font-size: 14px;
+    height: 35px;
+}
+
+.calendar-table td {
+    border: 1px solid #999;
+    padding: 3px;
+    text-align: left;
+    vertical-align: top;
+    height: 100px; /* 기본 높이 증가 */
+    width: 14.28%;
+    position: relative;
+    overflow: hidden;
+}
+
+.date-cell {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+    text-align: center;
+    font-size: 14px; /* 날짜 폰트 크기 증가 */
+}
+
+.camp-info {
+    font-size: 11px; /* 캠핑장 정보 폰트 크기 증가 */
+    line-height: 1.2;
+    height: calc(100% - 22px);
+    overflow: hidden;
+}
+
+.camp-info div {
+    margin: 1.5px 0;
+    padding: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500; /* 폰트 굵기 증가 */
+}
+
+.available {
+    color: #0066cc;
+    font-weight: bold;
+}
+
+.unavailable {
+    color: #cc0000;
+    font-weight: bold; /* 굵기 추가 */
+}
+
+.error {
+    color: #ff6b6b;
+    font-style: italic;
+    font-weight: bold;
+}
+
+.loading {
+    color: #666;
+    font-style: italic;
+    font-weight: 500;
+}
+
+.controls {
+    text-align: center;
+    margin: 15px 0;
+}
+
+.month-nav {
+    display: inline-block;
+    margin: 0 15px;
+}
+
+.month-nav button, .refresh-btn, .range-btn {
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    margin: 0 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 14px; /* 버튼 폰트 크기 증가 */
+    font-weight: 500;
+}
+
+.refresh-btn {
+    background-color: #4CAF50;
+}
+
+.range-btn {
+    background-color: #FF5722;
+}
+
+.month-nav button:hover, .refresh-btn:hover, .range-btn:hover {
+    opacity: 0.8;
+}
+
+.notice {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 15px 0;
+    text-align: center;
+    font-size: 14px; /* 공지사항 폰트 크기 증가 */
+    font-weight: 500;
+}
+
+.notice.error {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.progress-container {
+    margin: 15px 0;
+    text-align: center;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 18px;
+    background-color: #e0e0e0;
+    border-radius: 9px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #4CAF50;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 13px;
+    color: #666;
+    font-weight: 500;
+}
+
+/* 모바일 최적화 (갤럭시 S22 울트라 등) */
+@media screen and (max-width: 480px) {
+    body {
+        margin: 2px;
+        font-size: 12px;
+    }
+    
+    .container {
+        padding: 0 2px;
+    }
+    
+    h1 {
+        font-size: 18px;
+        margin-bottom: 10px;
+    }
+    
+    .calendar-table td {
+        height: 85px;
+        padding: 2px;
+    }
+    
+    .date-cell {
+        font-size: 12px;
+        margin-bottom: 3px;
+    }
+    
+    .camp-info {
+        font-size: 10px; /* 모바일에서 폰트 크기 */
+        line-height: 1.1;
+    }
+    
+    .camp-info div {
+        margin: 1px 0;
+        font-weight: 600; /* 모바일에서 더 굵게 */
+    }
+    
+    .controls {
+        margin: 10px 0;
+    }
+    
+    .month-nav button, .refresh-btn, .range-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+        margin: 2px;
+    }
+    
+    .notice {
+        font-size: 12px;
+        padding: 8px;
+    }
+}
+
+/* 태블릿 크기 */
+@media screen and (min-width: 481px) and (max-width: 768px) {
+    .calendar-table td {
+        height: 95px;
+    }
+    
+    .camp-info {
+        font-size: 11px;
+    }
+    
+    .date-cell {
+        font-size: 13px;
+    }
+}
+
+/* 데스크톱 크기 */
+@media screen and (min-width: 769px) {
+    .calendar-table td {
+        height: 110px; /* 데스크톱에서 더 큰 셀 */
+    }
+    
+    .camp-info {
+        font-size: 12px; /* 데스크톱에서 더 큰 폰트 */
+    }
+    
+    .date-cell {
+        font-size: 15px;
+    }
+}
+
+/* 세로 화면이 짧은 경우 */
+@media screen and (max-height: 700px) {
+    .calendar-table td {
+        height: 75px;
+    }
+    
+    .camp-info {
+        font-size: 10px;
+    }
+}
+
+/* 고해상도 디스플레이 (레티나 등) */
+@media screen and (-webkit-min-device-pixel-ratio: 2), 
+       screen and (min-resolution: 192dpi) {
+    .camp-info {
+        font-size: 12px; /* 고해상도에서 더 큰 폰트 */
+        font-weight: 600;
+    }
+    
+    .date-cell {
+        font-size: 15px;
+    }
+    
+    .available, .unavailable, .error {
+        font-weight: 700; /* 고해상도에서 더 굵게 */
+    }
+}

@@ -25,6 +25,15 @@ CAMP_TYPES = {
     '5': '데크'
 }
 
+# 달력을 일요일부터 시작하도록 설정
+calendar.setfirstweekday(calendar.SUNDAY)
+
+# 세션 상태 초기화
+if 'current_year' not in st.session_state:
+    current_date = datetime.now()
+    st.session_state.current_year = current_date.year
+    st.session_state.current_month = current_date.month
+
 # 세션 재사용을 위한 전역 세션
 @st.cache_resource
 def get_session():
@@ -66,9 +75,26 @@ def scrape_camp_data_fast(date, place_cd, session):
         print(f"Error scraping {date}, place {place_cd}: {e}")
         return -1
 
-@st.cache_data(ttl=300)  # 5분 캐시
-def get_camp_data_for_date(date_str):
+# 캐시 시간을 조정 가능하도록 수정
+def get_camp_data_for_date(date_str, use_cache=True, cache_minutes=5):
     """특정 날짜의 모든 캠핑장 예약 현황을 가져옵니다."""
+    
+    # 캐시 사용 여부에 따라 다른 함수 호출
+    if use_cache:
+        return _get_camp_data_cached(date_str, cache_minutes)
+    else:
+        return _get_camp_data_direct(date_str)
+
+@st.cache_data(ttl=60)  # 1분 캐시 (기본값)
+def _get_camp_data_cached(date_str, cache_minutes):
+    """캐시된 데이터 조회"""
+    # 캐시 데이터에 시간 정보 추가
+    data = _get_camp_data_direct(date_str)
+    data['_cached_time'] = datetime.now().strftime("%H:%M:%S")
+    return data
+
+def _get_camp_data_direct(date_str):
+    """실시간 데이터 조회 (캐시 없음)"""
     session = get_session()
     
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -87,9 +113,11 @@ def get_camp_data_for_date(date_str):
                 print(f"Error for {type_name}: {e}")
                 results[type_name] = -1
     
+    # 실시간 데이터에 시간 정보 추가
+    results['_fetch_time'] = datetime.now().strftime("%H:%M:%S")
     return results
 
-def get_camp_data_for_month(year, month):
+def get_camp_data_for_month(year, month, use_cache=True, cache_minutes=5):
     """한 달 전체 데이터를 가져옵니다."""
     
     # 해당 월의 모든 날짜 생성
@@ -103,20 +131,27 @@ def get_camp_data_for_month(year, month):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    # 시작 시간 기록
+    start_time = datetime.now()
+    
     for i, date_str in enumerate(dates):
-        status_text.text(f"로딩 중... {date_str} ({i+1}/{len(dates)})")
-        results[date_str] = get_camp_data_for_date(date_str)
+        cache_status = "캐시됨" if use_cache else "실시간"
+        status_text.text(f"로딩 중... {date_str} ({i+1}/{len(dates)}) - {cache_status}")
+        results[date_str] = get_camp_data_for_date(date_str, use_cache, cache_minutes)
         progress_bar.progress((i + 1) / len(dates))
     
-    status_text.text("완료!")
-    time.sleep(1)
+    # 완료 시간 기록
+    end_time = datetime.now()
+    
+    # UI 정리
     progress_bar.empty()
     status_text.empty()
     
-    return results
+    return results, start_time, end_time
 
 def create_calendar_html(year, month, camp_data):
-    """달력 HTML 생성"""
+    """달력 HTML 생성 - 일요일부터 시작"""
+    # 일요일부터 시작하는 달력 생성
     cal = calendar.monthcalendar(year, month)
     
     html = f"""
@@ -135,6 +170,12 @@ def create_calendar_html(year, month, camp_data):
         border: 1px solid #999;
         font-size: 14px;
     }}
+    .calendar-table th.sunday {{
+        color: #d63384;
+    }}
+    .calendar-table th.saturday {{
+        color: #0d6efd;
+    }}
     .calendar-table td {{
         border: 1px solid #999;
         padding: 8px;
@@ -149,6 +190,12 @@ def create_calendar_html(year, month, camp_data):
         margin-bottom: 5px;
         text-align: center;
         font-size: 14px;
+    }}
+    .date-cell.sunday {{
+        color: #d63384;
+    }}
+    .date-cell.saturday {{
+        color: #0d6efd;
     }}
     .camp-info {{
         font-size: 11px;
@@ -166,7 +213,13 @@ def create_calendar_html(year, month, camp_data):
     <table class="calendar-table">
     <thead>
     <tr>
-    <th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+    <th class="sunday">일</th>
+    <th>월</th>
+    <th>화</th>
+    <th>수</th>
+    <th>목</th>
+    <th>금</th>
+    <th class="saturday">토</th>
     </tr>
     </thead>
     <tbody>
@@ -174,16 +227,29 @@ def create_calendar_html(year, month, camp_data):
     
     for week in cal:
         html += "<tr>"
-        for day in week:
+        for day_index, day in enumerate(week):
             if day == 0:
                 html += "<td></td>"
             else:
                 date_str = f"{year}-{month:02d}-{day:02d}"
-                html += f'<td><div class="date-cell">{day:02d}</div>'
+                
+                # 요일별 클래스 설정 (일요일=0, 토요일=6)
+                day_class = ""
+                if day_index == 0:  # 일요일
+                    day_class = "sunday"
+                elif day_index == 6:  # 토요일
+                    day_class = "saturday"
+                
+                html += f'<td><div class="date-cell {day_class}">{day:02d}</div>'
                 
                 if date_str in camp_data:
+                    data = camp_data[date_str]
                     html += '<div class="camp-info">'
-                    for camp_type, count in camp_data[date_str].items():
+                    for camp_type, count in data.items():
+                        # 메타데이터는 제외
+                        if camp_type.startswith('_'):
+                            continue
+                        
                         if count == -1:
                             html += f'<div class="error">{camp_type}: X</div>'
                         elif count > 0:
@@ -200,68 +266,176 @@ def create_calendar_html(year, month, camp_data):
     html += "</tbody></table>"
     return html
 
+def change_month(delta):
+    """월 변경 함수"""
+    new_month = st.session_state.current_month + delta
+    new_year = st.session_state.current_year
+    
+    if new_month > 12:
+        new_month = 1
+        new_year += 1
+    elif new_month < 1:
+        new_month = 12
+        new_year -= 1
+    
+    st.session_state.current_month = new_month
+    st.session_state.current_year = new_year
+
+def go_to_current_month():
+    """현재 월로 이동"""
+    current_date = datetime.now()
+    st.session_state.current_year = current_date.year
+    st.session_state.current_month = current_date.month
+
+# CSS로 상단 여백 최소화
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    .stApp > header {
+        background-color: transparent;
+    }
+    .stApp {
+        margin-top: -80px;
+    }
+    h1 {
+        padding-top: 0rem;
+        margin-top: 0rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 메인 앱
 def main():
-    st.title("🏕️ 군포 캠핑장 예약 현황 달력")
+    # 컴팩트한 제목
+    st.markdown("# 🏕️ 군포 캠핑장 예약 현황")
     
-    # 현재 날짜 기준
-    current_date = datetime.now()
-    
-    # 사이드바에서 날짜 선택
+    # 사이드바는 설정용으로만 사용
     with st.sidebar:
-        st.header("📅 날짜 선택")
+        st.header("⚙️ 설정")
         
-        selected_year = st.selectbox(
-            "년도", 
-            options=list(range(current_date.year, current_date.year + 2)),
-            index=0
+        # 캐시 사용 여부 선택
+        use_cache = st.radio(
+            "데이터 로딩 방식",
+            ["🔄 실시간 (느림, 정확)", "💾 캐시 사용 (빠름)"],
+            index=1,
+            help="실시간: 매번 새로운 데이터를 가져옵니다 (느림)\n캐시: 일정 시간 동안 저장된 데이터를 사용합니다 (빠름)"
         )
+        use_cache_bool = "캐시 사용" in use_cache
         
-        selected_month = st.selectbox(
-            "월", 
-            options=list(range(1, 13)),
-            index=current_date.month - 1
-        )
-        
-        st.header("🎯 조회 옵션")
-        
-        if st.button("🔄 이번 달 전체 로드", type="primary"):
-            st.session_state.load_month = True
-            st.session_state.selected_year = selected_year
-            st.session_state.selected_month = selected_month
+        if use_cache_bool:
+            cache_minutes = st.slider(
+                "캐시 유지 시간 (분)",
+                min_value=1,
+                max_value=30,
+                value=5,
+                help="설정한 시간 동안 이전 데이터를 재사용합니다"
+            )
+        else:
+            cache_minutes = 0
+            st.warning("⚠️ 실시간 모드는 로딩이 오래 걸릴 수 있습니다.")
         
         if st.button("🗑️ 캐시 삭제"):
             st.cache_data.clear()
             st.success("캐시가 삭제되었습니다!")
         
+        # 캐시 상태 표시
+        st.markdown("---")
+        st.markdown("### 📊 캐시 정보")
+        if use_cache_bool:
+            st.info(f"💾 캐시 모드: {cache_minutes}분")
+            st.caption(f"데이터는 {cache_minutes}분 동안 저장됩니다")
+        else:
+            st.info("🔄 실시간 모드")
+            st.caption("매번 새로운 데이터를 가져옵니다")
+        
         # 사용법 안내
         st.markdown("---")
         st.markdown("### 📖 사용법")
         st.markdown("""
-        1. **년도와 월 선택**
+        1. **좌우 화살표로 월 이동**
         2. **'이번 달 전체 로드'** 클릭
         3. 달력에서 예약 현황 확인
-        4. 개별 날짜는 아래에서 조회
         """)
+
+    # 컴팩트한 년월 네비게이션 (년도 버튼 제거)
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 3, 1, 1])
     
-    # 메인 영역
-    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if st.button("◀", help="이전 달"):
+            change_month(-1)
+            st.rerun()
     
     with col2:
-        st.markdown(f"### {selected_year}년 {selected_month}월")
+        if st.button("📅", help="현재 월로 이동"):
+            go_to_current_month()
+            st.rerun()
+    
+    with col3:
+        # 현재 년월 표시
+        current_date_str = f"{st.session_state.current_year}년 {st.session_state.current_month}월"
+        st.markdown(f"<h2 style='text-align: center; margin: 10px 0;'>{current_date_str}</h2>", 
+                   unsafe_allow_html=True)
+    
+    with col4:
+        if st.button("▶", help="다음 달"):
+            change_month(1)
+            st.rerun()
+    
+    with col5:
+        cache_status = f"(캐시: {cache_minutes}분)" if use_cache_bool else "(실시간)"
+        
+        if st.button("🔄 로드", 
+                    type="primary", 
+                    help=f"이번 달 전체 데이터를 {cache_status} 로딩합니다"):
+            st.session_state.load_month = True
+            st.session_state.use_cache = use_cache_bool
+            st.session_state.cache_minutes = cache_minutes
+            st.rerun()
     
     # 월 전체 로드 처리
     if st.session_state.get('load_month', False):
-        year = st.session_state.get('selected_year', selected_year)
-        month = st.session_state.get('selected_month', selected_month)
+        year = st.session_state.current_year
+        month = st.session_state.current_month
+        use_cache_session = st.session_state.get('use_cache', True)
+        cache_minutes_session = st.session_state.get('cache_minutes', 5)
         
-        st.info(f"📊 {year}년 {month}월 데이터를 로딩하고 있습니다...")
+        mode_text = f"캐시 모드 ({cache_minutes_session}분)" if use_cache_session else "실시간 모드"
         
         try:
-            camp_data = get_camp_data_for_month(year, month)
+            # 로딩 시작
+            with st.spinner(f"📊 {year}년 {month}월 데이터를 {mode_text}로 로딩 중입니다..."):
+                camp_data, start_time, end_time = get_camp_data_for_month(year, month, use_cache_session, cache_minutes_session)
+            
+            # 달력 표시
             calendar_html = create_calendar_html(year, month, camp_data)
             st.components.v1.html(calendar_html, height=700, scrolling=True)
-            st.success(f"✅ {year}년 {month}월 데이터 로딩 완료!")
+            
+            # 로딩 완료 메시지와 시간 정보
+            loading_time = (end_time - start_time).total_seconds()
+            
+            # 첫 번째 데이터의 시간 정보 가져오기
+            sample_date = list(camp_data.keys())[0]
+            sample_data = camp_data[sample_date]
+            
+            if use_cache_session:
+                if '_cached_time' in sample_data:
+                    data_time = sample_data['_cached_time']
+                    st.success(f"✅ {year}년 {month}월 캐시 데이터 로딩 완료!")
+                    st.info(f"📊 캐시 데이터 생성 시간: {data_time} | 로딩 시간: {loading_time:.1f}초")
+                else:
+                    st.success(f"✅ {year}년 {month}월 데이터 로딩 완료! (캐시: {cache_minutes_session}분)")
+            else:
+                if '_fetch_time' in sample_data:
+                    data_time = sample_data['_fetch_time']
+                    st.success(f"✅ {year}년 {month}월 실시간 데이터 로딩 완료!")
+                    st.info(f"📊 실시간 데이터 조회 시간: {data_time} | 총 로딩 시간: {loading_time:.1f}초")
+                else:
+                    st.success(f"✅ {year}년 {month}월 실시간 데이터 로딩 완료!")
+                    
         except Exception as e:
             st.error(f"❌ 데이터 로딩 중 오류가 발생했습니다: {str(e)}")
         
@@ -269,12 +443,11 @@ def main():
     else:
         # 기본 빈 달력 표시
         empty_data = {}
-        calendar_html = create_calendar_html(selected_year, selected_month, empty_data)
+        calendar_html = create_calendar_html(st.session_state.current_year, st.session_state.current_month, empty_data)
         st.components.v1.html(calendar_html, height=700, scrolling=True)
-        st.info("💡 위의 '이번 달 전체 로드' 버튼을 클릭하여 실제 예약 현황을 확인하세요!")
+        st.info("💡 우측 상단의 '🔄 로드' 버튼을 클릭하여 예약 현황을 확인하세요!")
     
-    # 범례
-    st.markdown("---")
+    # 컴팩트한 범례
     st.markdown("### 📋 범례")
     col1, col2, col3, col4 = st.columns(4)
     
@@ -286,64 +459,16 @@ def main():
         st.markdown("⚫ **회색**: 로딩 중")
     with col4:
         st.markdown("🟠 **주황색**: 오류 발생")
-    
-    # 개별 날짜 조회
-    st.markdown("---")
-    st.subheader("📅 개별 날짜 조회")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        selected_date = st.date_input(
-            "날짜를 선택하세요",
-            value=datetime.now().date(),
-            help="조회할 날짜를 선택하세요"
-        )
-    
-    with col2:
-        if st.button("🔍 조회하기"):
-            date_str = selected_date.strftime("%Y-%m-%d")
-            
-            with st.spinner(f"📡 {date_str} 데이터 로딩 중..."):
-                data = get_camp_data_for_date(date_str)
-            
-            st.subheader(f"📊 {date_str} 예약 현황")
-            
-            # 결과를 표로 표시
-            df_data = []
-            for camp_type, count in data.items():
-                if count == -1:
-                    status = "❌ 오류"
-                    display_count = "오류"
-                elif count > 0:
-                    status = "✅ 예약가능"
-                    display_count = count
-                else:
-                    status = "❌ 예약불가"
-                    display_count = 0
-                
-                df_data.append({
-                    "캠핑장 타입": camp_type,
-                    "예약 가능 수": display_count,
-                    "상태": status
-                })
-            
-            df = pd.DataFrame(df_data)
-            st.dataframe(df, use_container_width=True)
-            
-            # 요약 정보
-            total_available = sum([count for count in data.values() if count > 0])
-            st.metric("총 예약 가능 사이트", total_available)
 
-    # 푸터
+    # 간단한 푸터
     st.markdown("---")
     st.markdown(
         """
-        <div style='text-align: center; color: #666; padding: 20px;'>
+        <div style='text-align: center; color: #666; padding: 10px;'>
         <small>
-        📊 데이터 출처: 군포시 캠핑장 공식 사이트<br>
-        🔄 데이터는 5분마다 캐시됩니다<br>
-        ⏰ 최종 업데이트: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """
+        📊 데이터 출처: 군포시 캠핑장 공식 사이트 | 
+        🔄 <strong>네비게이션</strong>: ◀▶ 월 이동, 📅 현재 월 | 
+        🗓️ 달력은 일요일부터 시작
         </small>
         </div>
         """, 

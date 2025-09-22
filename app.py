@@ -304,6 +304,7 @@ st.markdown("""
         padding-top: 0rem;
         margin-top: 0rem;
         margin-bottom: 1rem;
+        font-size: 1.8rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -362,7 +363,7 @@ def main():
         """)
 
     # 컴팩트한 년월 네비게이션 (년도 버튼 제거)
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 3, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
     
     with col1:
         if st.button("◀", help="이전 달"):

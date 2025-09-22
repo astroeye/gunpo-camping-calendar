@@ -1,17 +1,21 @@
-from flask import Flask, render_template, jsonify, request
+import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask_cors import CORS
 import time
 import re
 import calendar
 import pandas as pd
 
-app = Flask(__name__)
-CORS(app)
+# 페이지 설정
+st.set_page_config(
+    page_title="군포 캠핑장 예약 현황",
+    page_icon="🏕️",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # 캠핑장 타입 매핑
 CAMP_TYPES = {
@@ -59,7 +63,7 @@ def scrape_camp_data_fast(date, place_cd, session):
         return count
         
     except Exception as e:
-        st.error(f"Error scraping {date}, place {place_cd}: {e}")
+        print(f"Error scraping {date}, place {place_cd}: {e}")
         return -1
 
 @st.cache_data(ttl=300)  # 5분 캐시
@@ -80,14 +84,13 @@ def get_camp_data_for_date(date_str):
                 count = future.result(timeout=10)
                 results[type_name] = count
             except Exception as e:
-                st.error(f"Error for {type_name}: {e}")
+                print(f"Error for {type_name}: {e}")
                 results[type_name] = -1
     
     return results
 
 def get_camp_data_for_month(year, month):
     """한 달 전체 데이터를 가져옵니다."""
-    session = get_session()
     
     # 해당 월의 모든 날짜 생성
     _, last_day = calendar.monthrange(year, month)
@@ -106,6 +109,7 @@ def get_camp_data_for_month(year, month):
         progress_bar.progress((i + 1) / len(dates))
     
     status_text.text("완료!")
+    time.sleep(1)
     progress_bar.empty()
     status_text.empty()
     
@@ -121,6 +125,7 @@ def create_calendar_html(year, month, camp_data):
         width: 100%;
         border-collapse: collapse;
         font-family: Arial, sans-serif;
+        margin: 10px 0;
     }}
     .calendar-table th {{
         background-color: #d4d4d4;
@@ -128,6 +133,7 @@ def create_calendar_html(year, month, camp_data):
         text-align: center;
         font-weight: bold;
         border: 1px solid #999;
+        font-size: 14px;
     }}
     .calendar-table td {{
         border: 1px solid #999;
@@ -146,11 +152,15 @@ def create_calendar_html(year, month, camp_data):
     }}
     .camp-info {{
         font-size: 11px;
-        line-height: 1.2;
+        line-height: 1.3;
+    }}
+    .camp-info div {{
+        margin: 2px 0;
     }}
     .available {{ color: #0066cc; font-weight: bold; }}
     .unavailable {{ color: #cc0000; font-weight: bold; }}
     .error {{ color: #ff6b6b; font-style: italic; }}
+    .loading {{ color: #666; font-style: italic; }}
     </style>
     
     <table class="calendar-table">
@@ -182,7 +192,7 @@ def create_calendar_html(year, month, camp_data):
                             html += f'<div class="unavailable">{camp_type}: {count}</div>'
                     html += '</div>'
                 else:
-                    html += '<div class="camp-info">대기중...</div>'
+                    html += '<div class="camp-info"><div class="loading">대기중...</div></div>'
                 
                 html += "</td>"
         html += "</tr>"
@@ -194,12 +204,12 @@ def create_calendar_html(year, month, camp_data):
 def main():
     st.title("🏕️ 군포 캠핑장 예약 현황 달력")
     
+    # 현재 날짜 기준
+    current_date = datetime.now()
+    
     # 사이드바에서 날짜 선택
     with st.sidebar:
         st.header("📅 날짜 선택")
-        
-        # 현재 날짜 기준
-        current_date = datetime.now()
         
         selected_year = st.selectbox(
             "년도", 
@@ -223,6 +233,16 @@ def main():
         if st.button("🗑️ 캐시 삭제"):
             st.cache_data.clear()
             st.success("캐시가 삭제되었습니다!")
+        
+        # 사용법 안내
+        st.markdown("---")
+        st.markdown("### 📖 사용법")
+        st.markdown("""
+        1. **년도와 월 선택**
+        2. **'이번 달 전체 로드'** 클릭
+        3. 달력에서 예약 현황 확인
+        4. 개별 날짜는 아래에서 조회
+        """)
     
     # 메인 영역
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -235,20 +255,27 @@ def main():
         year = st.session_state.get('selected_year', selected_year)
         month = st.session_state.get('selected_month', selected_month)
         
-        with st.spinner(f"{year}년 {month}월 데이터를 로딩 중입니다..."):
+        st.info(f"📊 {year}년 {month}월 데이터를 로딩하고 있습니다...")
+        
+        try:
             camp_data = get_camp_data_for_month(year, month)
             calendar_html = create_calendar_html(year, month, camp_data)
-            st.components.v1.html(calendar_html, height=600)
+            st.components.v1.html(calendar_html, height=700, scrolling=True)
+            st.success(f"✅ {year}년 {month}월 데이터 로딩 완료!")
+        except Exception as e:
+            st.error(f"❌ 데이터 로딩 중 오류가 발생했습니다: {str(e)}")
         
         st.session_state.load_month = False
     else:
         # 기본 빈 달력 표시
         empty_data = {}
         calendar_html = create_calendar_html(selected_year, selected_month, empty_data)
-        st.components.v1.html(calendar_html, height=600)
+        st.components.v1.html(calendar_html, height=700, scrolling=True)
+        st.info("💡 위의 '이번 달 전체 로드' 버튼을 클릭하여 실제 예약 현황을 확인하세요!")
     
     # 범례
     st.markdown("---")
+    st.markdown("### 📋 범례")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -269,14 +296,15 @@ def main():
     with col1:
         selected_date = st.date_input(
             "날짜를 선택하세요",
-            value=datetime.now().date()
+            value=datetime.now().date(),
+            help="조회할 날짜를 선택하세요"
         )
     
     with col2:
         if st.button("🔍 조회하기"):
             date_str = selected_date.strftime("%Y-%m-%d")
             
-            with st.spinner(f"{date_str} 데이터 로딩 중..."):
+            with st.spinner(f"📡 {date_str} 데이터 로딩 중..."):
                 data = get_camp_data_for_date(date_str)
             
             st.subheader(f"📊 {date_str} 예약 현황")
@@ -284,15 +312,43 @@ def main():
             # 결과를 표로 표시
             df_data = []
             for camp_type, count in data.items():
-                status = "❌ 오류" if count == -1 else ("✅ 예약가능" if count > 0 else "❌ 예약불가")
+                if count == -1:
+                    status = "❌ 오류"
+                    display_count = "오류"
+                elif count > 0:
+                    status = "✅ 예약가능"
+                    display_count = count
+                else:
+                    status = "❌ 예약불가"
+                    display_count = 0
+                
                 df_data.append({
                     "캠핑장 타입": camp_type,
-                    "예약 가능 수": count if count >= 0 else "오류",
+                    "예약 가능 수": display_count,
                     "상태": status
                 })
             
             df = pd.DataFrame(df_data)
             st.dataframe(df, use_container_width=True)
+            
+            # 요약 정보
+            total_available = sum([count for count in data.values() if count > 0])
+            st.metric("총 예약 가능 사이트", total_available)
+
+    # 푸터
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; color: #666; padding: 20px;'>
+        <small>
+        📊 데이터 출처: 군포시 캠핑장 공식 사이트<br>
+        🔄 데이터는 5분마다 캐시됩니다<br>
+        ⏰ 최종 업데이트: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """
+        </small>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()

@@ -291,14 +291,14 @@ def go_to_current_month():
 st.markdown("""
 <style>
     .block-container {
-        padding-top: 1rem;
+        padding-top: 2rem;
         padding-bottom: 1rem;
     }
     .stApp > header {
         background-color: transparent;
     }
     .stApp {
-        margin-top: -80px;
+        margin-top: -20px;
     }
     h1 {
         padding-top: 0rem;

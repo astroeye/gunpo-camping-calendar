@@ -313,6 +313,7 @@ st.markdown("""
 def main():
     # 컴팩트한 제목
     st.markdown("# 🏕️ 군포 캠핑장 예약 현황")
+    st.caption("안녕?")
     
     # 사이드바는 설정용으로만 사용
     with st.sidebar:

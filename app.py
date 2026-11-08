@@ -38,6 +38,9 @@ if 'current_year' not in st.session_state:
 @st.cache_resource
 def get_session():
     session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=30, pool_maxsize=30)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -75,26 +78,23 @@ def scrape_camp_data_fast(date, place_cd, session):
         print(f"Error scraping {date}, place {place_cd}: {e}")
         return -1
 
-# 캐시 시간을 조정 가능하도록 수정
 def get_camp_data_for_date(date_str, use_cache=True, cache_minutes=5):
     """특정 날짜의 모든 캠핑장 예약 현황을 가져옵니다."""
-    
-    # 캐시 사용 여부에 따라 다른 함수 호출
     if use_cache:
-        return _get_camp_data_cached(date_str, cache_minutes)
+        return _get_camp_data_cached(date_str)
     else:
         return _get_camp_data_direct(date_str)
 
-@st.cache_data(ttl=60)  # 1분 캐시 (기본값)
-def _get_camp_data_cached(date_str, cache_minutes):
-    """캐시된 데이터 조회"""
-    # 캐시 데이터에 시간 정보 추가
+@st.cache_data(ttl=300)
+def _get_camp_data_cached(date_str):
+    """캐시된 단일 날짜 데이터 조회"""
     data = _get_camp_data_direct(date_str)
-    data['_cached_time'] = datetime.now().strftime("%H:%M:%S")
-    return data
+    res = dict(data)
+    res['_cached_time'] = datetime.now().strftime("%H:%M:%S")
+    return res
 
 def _get_camp_data_direct(date_str):
-    """실시간 데이터 조회 (캐시 없음)"""
+    """실시간 단일 날짜 데이터 조회"""
     session = get_session()
     
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -113,40 +113,68 @@ def _get_camp_data_direct(date_str):
                 print(f"Error for {type_name}: {e}")
                 results[type_name] = -1
     
-    # 실시간 데이터에 시간 정보 추가
     results['_fetch_time'] = datetime.now().strftime("%H:%M:%S")
     return results
 
-def get_camp_data_for_month(year, month, use_cache=True, cache_minutes=5):
-    """한 달 전체 데이터를 가져옵니다."""
-    
-    # 해당 월의 모든 날짜 생성
+def _fetch_month_data_direct(year, month):
+    """월 전체 실시간 데이터 일괄 병렬 조회 (초고속 병렬화)"""
+    session = get_session()
     _, last_day = calendar.monthrange(year, month)
-    dates = []
+    
+    tasks = []
     for day in range(1, last_day + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
-        dates.append(date_str)
+        for part_cd, type_name in CAMP_TYPES.items():
+            tasks.append((date_str, part_cd, type_name))
+            
+    results = {f"{year}-{month:02d}-{day:02d}": {} for day in range(1, last_day + 1)}
+    fetch_time = datetime.now().strftime("%H:%M:%S")
     
-    results = {}
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # 한 달 전체 조합(약 120여 개)을 25개 스레드로 동시에 요청
+    with ThreadPoolExecutor(max_workers=25) as executor:
+        future_to_task = {
+            executor.submit(scrape_camp_data_fast, date_str, part_cd, session): (date_str, type_name)
+            for date_str, part_cd, type_name in tasks
+        }
+        
+        for future in as_completed(future_to_task):
+            date_str, type_name = future_to_task[future]
+            try:
+                count = future.result(timeout=10)
+                results[date_str][type_name] = count
+            except Exception as e:
+                print(f"Error scraping {date_str} {type_name}: {e}")
+                results[date_str][type_name] = -1
+
+    for date_str in results:
+        results[date_str]['_fetch_time'] = fetch_time
+        
+    return results
+
+@st.cache_data(ttl=300)
+def _fetch_month_data_cached(year, month):
+    """월 전체 캐시 데이터 조회"""
+    data = _fetch_month_data_direct(year, month)
+    cached_time = datetime.now().strftime("%H:%M:%S")
     
-    # 시작 시간 기록
+    cached_results = {}
+    for date_str, camp_info in data.items():
+        day_data = dict(camp_info)
+        day_data['_cached_time'] = cached_time
+        cached_results[date_str] = day_data
+        
+    return cached_results
+
+def get_camp_data_for_month(year, month, use_cache=True, cache_minutes=5):
+    """한 달 전체 데이터를 초고속 병렬 처리로 가져옵니다."""
     start_time = datetime.now()
     
-    for i, date_str in enumerate(dates):
-        cache_status = "캐시됨" if use_cache else "실시간"
-        status_text.text(f"로딩 중... {date_str} ({i+1}/{len(dates)}) - {cache_status}")
-        results[date_str] = get_camp_data_for_date(date_str, use_cache, cache_minutes)
-        progress_bar.progress((i + 1) / len(dates))
-    
-    # 완료 시간 기록
+    if use_cache:
+        results = _fetch_month_data_cached(year, month)
+    else:
+        results = _fetch_month_data_direct(year, month)
+        
     end_time = datetime.now()
-    
-    # UI 정리
-    progress_bar.empty()
-    status_text.empty()
-    
     return results, start_time, end_time
 
 def create_calendar_html(year, month, camp_data):
